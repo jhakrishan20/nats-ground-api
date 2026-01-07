@@ -4,5 +4,4 @@ PyYAML
 pydantic  
 pywin32         
 eventlet
-flask-socketio
-flask
+websocket
