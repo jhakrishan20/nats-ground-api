@@ -1,0 +1,23 @@
+# config/message.yaml
+
+discovery:
+  header:
+    msg_type: "Discovery"
+    source: "ground-unit"
+    qos: "AT_MOST_ONCE"
+
+  body:
+    client_id: "groundunit_001"
+    client_type: "GROUND"
+    software_version: "v2.3.1"
+    ip_address: "192.168.1.10"
+    capabilities:
+     - "telem"
+     - "video"
+     - "control"
+    location:
+    lat: 28.67
+    lon: 77.21
+    alt: 30.5
+    uptime_seconds: 125
+    status: "available"

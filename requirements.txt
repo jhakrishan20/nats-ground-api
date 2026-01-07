@@ -1,0 +1,8 @@
+nats-py   
+PyNaCl   
+PyYAML   
+pydantic  
+pywin32         
+eventlet
+flask-socketio
+flask

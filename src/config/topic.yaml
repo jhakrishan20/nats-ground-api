@@ -1,0 +1,22 @@
+Topics:
+  fclink:
+    - connect
+    - disconnect
+  discovery:
+    - request
+    - response
+  telemetry:
+    - imu
+    - gps
+    - battery
+    - status
+  command:
+    - takeoff
+    - land
+    - goto
+  video:
+    - start
+    - stop
+  heartbeat:
+    - edge
+    - ground

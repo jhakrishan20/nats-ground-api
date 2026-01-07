@@ -1,0 +1,16 @@
+# NATS-client configuration for Air Unit
+
+nats:
+  local_urls:
+    - nats://127.0.0.1:4222   # Local NATS server started by nats_node.py
+
+connection:
+  reconnect_wait: 2            # Seconds between reconnect attempts
+  max_reconnect_attempts: -1   # -1 means infinite retry
+
+client:
+  name: groundunit-client          # Logical name for client (shown in NATS monitoring)
+  id: "001"                     # Unique ID for this ground Unit
+
+config_file:
+  - C:\Users\krishan\Documents\DTL\services\nats-ground-api\src\config\ground.conf  # Path to NATS node configuration file
