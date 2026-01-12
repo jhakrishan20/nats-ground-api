@@ -1,7 +1,10 @@
 Topics:
-  fclink:
-    - connect
-    - disconnect
+  fcconnect:
+    - request
+    - response
+  fcdisconnect:
+    - request
+    - response  
   discovery:
     - request
     - response
