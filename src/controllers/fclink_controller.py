@@ -153,13 +153,13 @@ class FCLinkController:
             body = data.get("body", {})
             
             # 3. Format the WebSocket message
-            ws_msg = {
-                "type": "fc_connection_response",
-                "payload": body
-            }
+            # ws_msg = {
+            #     "type": "fc_connection_res",
+            #     "payload": body
+            # }
             
             # 4. Forward to the GCS (assuming self.ws_manager or similar)
-            await self._on_fcconnect_response(ws_msg)
+            await self._on_fcconnect_response(body)
             self.logger.info(f"✅ Forwarded FC Connect response to GCS: {body}")
 
         except Exception as e:
@@ -174,12 +174,12 @@ class FCLinkController:
             data = json.loads(raw_payload)
             body = data.get("body", {})
             
-            ws_msg = {
-                "type": "fc_disconnection_response",
-                "payload": body
-            }
+            # ws_msg = {
+            #     "type": "fc_disconnection_res",
+            #     "payload": body
+            # }
 
-            await self._on_fcdisconnect_response(ws_msg)
+            await self._on_fcdisconnect_response(body)
             self.logger.info(f"✅ Forwarded FC Disconnect response to GCS: {body}")
 
         except Exception as e:
