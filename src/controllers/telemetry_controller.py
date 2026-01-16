@@ -64,14 +64,14 @@ class TelemetryController:
             # 2. Extract the 'body' specifically
             body = data.get("body", {})
             
-            # 3. Format the WebSocket message
-            ws_msg = {
-                "type": "telemetry_update",
-                "payload": body
-            }
+            # # 3. Format the WebSocket message
+            # ws_msg = {
+            #     "type": "telemetry_update",
+            #     "payload": body
+            # }
             
             # 4. Forward to the GCS via the constructor-provided callback
-            await self.on_telemetry_update(ws_msg)
+            await self.on_telemetry_update(body)
             
             # Optional: Log success for debugging (high frequency)
             # self.logger.debug(f"Forwarded telem body for {data.get('header', {}).get('source', 'unknown')}")
