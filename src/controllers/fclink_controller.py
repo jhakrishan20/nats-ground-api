@@ -15,19 +15,26 @@ class FCLinkController:
     - Handle MAVLink or serial bridge state commands via NATS.
     """
 
-    def __init__(self, nats_client, ground_id: str):
+    def __init__(self, nats_client, ground_id: str, on_conn_response=None, on_disconn_response=None):
         self.client = nats_client
         self.publisher = NatsPublisher(nats_client)
         self.ground_id = ground_id
         self.logger = Logger.get("FCLink")
+        self._on_fcconnect_response = on_conn_response
+        self._on_fcdisconnect_response = on_disconn_response
 
     # ------------------------------
     # Public API
     # ------------------------------
+    async def activate(self):
+        """Initialize any required subscriptions or state."""
+        self.logger.info("Activating FCLinkController...")
+        # Add subscription setups if needed
+        await self._subscribe_to_fc_responses()
 
     async def send_connect_request(self, uav_id: str):
         """Send a 'wannaconnect' trigger to a specific UAV."""
-        subject = self._build_fc_subject(uav_id, "connect")
+        subject = self._build_fcconnect_pub_subject(uav_id)
         # You can use a raw string like your test or a Factory message
         # payload = MessageFactory.create(
         #     msg_type="fclink", 
@@ -41,7 +48,7 @@ class FCLinkController:
 
     async def send_disconnect_request(self, uav_id: str):
         """Send a 'wannadisconnect' trigger to a specific UAV."""
-        subject = self._build_fc_subject(uav_id, "disconnect")
+        subject = self._build_fcdisconnect_pub_subject(uav_id)
         # payload = MessageFactory.create(
         #     msg_type="fclink", 
         #     command="disconnect",
@@ -54,19 +61,126 @@ class FCLinkController:
         self.logger.info(f"⏹️ Sent FC Disconnect request to [{uav_id}] on {subject}")
 
     # ------------------------------
+    # Subscription Handelers
+    # ------------------------------
+
+    async def _subscribe_to_fc_responses(self):
+        """Subscribe to UAV FCLink connect/disconnect responses."""
+        # Subscribe to connect responses
+        subject = self._build_fcconnect_sub_subject()
+        await self.client.nc.subscribe(
+            subject,
+            cb=self._fcconnect_response_cb
+        )
+        # Subscribe to disconnect responses
+        subject = self._build_fcdisconnect_sub_subject()
+        await self.client.nc.subscribe(
+            subject,
+            cb=self._fcdisconnect_response_cb
+        )
+        self.logger.info(f"Subscribed to fc responses")
+
+    # ------------------------------
     # Subject Builders
     # ------------------------------
 
-    def _build_fc_subject(self, uav_id: str, subtopic: str):
+    def _build_fcconnect_pub_subject(self, uav_id: str):
         """
-        Builds: ground.<ground_id>.fclink.<connect/disconnect>
+        Builds: ground.<ground_id>.fcconnect.<request/response>
         With remote_client_id directed at the specific UAV.
         """
         return SubjectFactory().create(
             source="ground",
             source_id=self.ground_id,
-            topic="fclink",
-            subtopic=subtopic,
+            topic="fcconnect",
+            subtopic="request",
             mode="pub",
             remote_client_id=uav_id
         )
+
+    def _build_fcdisconnect_pub_subject(self, uav_id: str):
+        """
+        Builds: ground.<ground_id>.fcdisconnect.<request/response>
+        With remote_client_id directed at the specific UAV.
+        """
+        return SubjectFactory().create(
+            source="ground",
+            source_id=self.ground_id,
+            topic="fcdisconnect",
+            subtopic="request",
+            mode="pub",
+            remote_client_id=uav_id
+        )
+    
+    def _build_fcconnect_sub_subject(self):
+        """
+        Builds: uav.*.fcconnect.response
+        For subscribing to connect requests from any UAV.
+        """
+        return SubjectFactory().create(
+            source="uav",
+            source_id="*",
+            topic="fcconnect",
+            subtopic="response",
+            mode="sub"
+        )
+    
+    def _build_fcdisconnect_sub_subject(self):
+        """
+        Builds: uav.*.fcdisconnect.response
+        For subscribing to disconnect requests from any UAV.
+        """
+        return SubjectFactory().create(
+            source="uav",
+            source_id="*",
+            topic="fcdisconnect",
+            subtopic="response",
+            mode="sub"
+        )
+    
+    async def _fcconnect_response_cb(self, msg):
+        """
+        Callback for uav.*.fcconnect.response
+        Extracts data from NATS Msg and forwards to WebSocket.
+        """
+        try:
+            # 1. Extract and Decode the NATS data
+            # msg is a nats.aio.msg.Msg object
+            raw_payload = msg.data.decode()
+            data = json.loads(raw_payload)
+            
+            # 2. Extract the 'body' specifically (the part with {connected: True})
+            body = data.get("body", {})
+            
+            # 3. Format the WebSocket message
+            ws_msg = {
+                "type": "fc_connection_response",
+                "payload": body
+            }
+            
+            # 4. Forward to the GCS (assuming self.ws_manager or similar)
+            await self._on_fcconnect_response(ws_msg)
+            self.logger.info(f"✅ Forwarded FC Connect response to GCS: {body}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling fcconnect callback: {e}")
+
+    async def _fcdisconnect_response_cb(self, msg):
+        """
+        Callback for uav.*.fcdisconnect.response
+        """
+        try:
+            raw_payload = msg.data.decode()
+            data = json.loads(raw_payload)
+            body = data.get("body", {})
+            
+            ws_msg = {
+                "type": "fc_disconnection_response",
+                "payload": body
+            }
+
+            await self._on_fcdisconnect_response(ws_msg)
+            self.logger.info(f"✅ Forwarded FC Disconnect response to GCS: {body}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling fcdisconnect callback: {e}")

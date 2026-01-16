@@ -9,10 +9,7 @@ Topics:
     - request
     - response
   telemetry:
-    - imu
-    - gps
-    - battery
-    - status
+    - update
   command:
     - takeoff
     - land
