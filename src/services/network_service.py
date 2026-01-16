@@ -159,7 +159,7 @@ class NetworkService:
         try:
             self.logger.info(f"Got response for fc-connection: {conn_response}")
             if self.ws_server:
-                self.ws_server.send_event("fc_conn_res", conn_response)
+                self.ws_server.send_event("fc_connection_res", conn_response)
         except Exception as e:
             self.logger.error(f"Failed to send FC connection response: {e}")
 
@@ -168,7 +168,7 @@ class NetworkService:
         try:
             self.logger.info(f"Got response for fc-disconnection: {disconn_response}")
             if self.ws_server:
-                self.ws_server.send_event("fc_disconn_res", disconn_response)
+                self.ws_server.send_event("fc_disconnection_res", disconn_response)
         except Exception as e:
             self.logger.error(f"Failed to send FC disconnection response: {e}")
 
