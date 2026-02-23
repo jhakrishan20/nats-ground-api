@@ -179,7 +179,7 @@ class NetworkService:
             if self.ws_server:
                 self.ws_server.send_event("telemetry_update", telemetry_data)
         except Exception as e:
-            self.logger.error(f"Failed to send telemetry update: {e}")\
+            self.logger.error(f"Failed to send telemetry update: {e}")
             
     # mission upload wrappers        
 
