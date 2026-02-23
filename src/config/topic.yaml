@@ -20,3 +20,6 @@ Topics:
   heartbeat:
     - edge
     - ground
+  mission_upload:
+    - request
+    - response  

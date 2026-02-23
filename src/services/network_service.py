@@ -5,7 +5,7 @@ from typing import Optional
 from config import ConfigLoader
 from core.comms import NatsClient, NatsNode, WebSocketServer # IPCServer commented out
 from core.utils import Logger
-from controllers import DiscoveryController, FCLinkController, TelemetryController
+from controllers import DiscoveryController, CommandEgressController, TelemetryController
 
 class NetworkService:
     def __init__(self, config_file: str = "nats.yaml"):
@@ -18,7 +18,7 @@ class NetworkService:
         self.node: Optional[NatsNode] = None
         self.ws_server: Optional[WebSocketServer] = None
         self.discovery: Optional[DiscoveryController] = None
-        self.fclink: Optional[FCLinkController] = None
+        self._cmd_egress: Optional[CommandEgressController] = None
         
         # NATS Client Setup
         nats_cfg = self.config.get("nats", {})
@@ -42,9 +42,9 @@ class NetworkService:
             # 2. Connect NATS Client
             await self.client.connect()
 
-            # Initialize FCLinkController
-            self.fclink = FCLinkController(self.client, self.client_id, self.on_conn_response, self.on_disconn_response)
-            await self.fclink.activate()
+            # Initialize ComandEgressController
+            self._cmd_egress = CommandEgressController(self.client, self.client_id, self.on_conn_response, self.on_disconn_response, self.on_mission_upload_response)
+            await self._cmd_egress.activate()
 
             # init telemetry controler
             self.telemetry = TelemetryController(self.client, self.client_id, self.on_telemetry_update)
@@ -67,9 +67,11 @@ class NetworkService:
     def register_ws_handlers(self):
         """Registers events for the WebSocket thread."""
         self.ws_server.listen_event("search_for_uavs", self._handle_ws_search_wrapper)
-        # New FC Handlers
+        # Fc-link Handlers
         self.ws_server.listen_event("connect_to_fc", self._handle_ws_fc_connect_wrapper)
         self.ws_server.listen_event("disconnect_from_fc", self._handle_ws_fc_disconnect_wrapper)
+        # mission handelers
+        self.ws_server.listen_event("mission_upload", self._handle_ws_mission_upload_wrapper)
 
     def _handle_ws_search_wrapper(self, sid, data):
         """
@@ -129,11 +131,11 @@ class NetworkService:
         self.logger.info(f"Attempting to trigger FC connect for UAV: {uav_id}")
         
         try:
-            if self.fclink:
-                # Use the FCLinkController to build the subject and publish to NATS
-                await self.fclink.send_connect_request(uav_id)
+            if self._cmd_egress:
+                # Use the CommandEgressController to build the subject and publish to NATS
+                await self._cmd_egress.send_connect_request(uav_id)
             else:
-                self.logger.error("FCLinkController not initialized")
+                self.logger.error("CommandEgressController not initialized")
 
         except Exception as e:
             self.logger.error(f"Failed to relay FC Connection command: {e}")
@@ -145,11 +147,11 @@ class NetworkService:
         self.logger.info(f"Attempting to trigger FC disconnect for UAV: {uav_id}")
         
         try:
-            if self.fclink:
-                # Use the FCLinkController to build the subject and publish to NATS
-                await self.fclink.send_disconnect_request(uav_id)
+            if self._cmd_egress:
+                # Use the CommandEgressController to build the subject and publish to NATS
+                await self._cmd_egress.send_disconnect_request(uav_id)
             else:
-                self.logger.error("FCLinkController not initialized")
+                self.logger.error("CommandEgressController not initialized")
 
         except Exception as e:
             self.logger.error(f"Failed to relay FC Disconnection command: {e}")
@@ -177,7 +179,40 @@ class NetworkService:
             if self.ws_server:
                 self.ws_server.send_event("telemetry_update", telemetry_data)
         except Exception as e:
-            self.logger.error(f"Failed to send telemetry update: {e}")
+            self.logger.error(f"Failed to send telemetry update: {e}")\
+            
+    # mission upload wrappers        
+
+    def _handle_ws_mission_upload_wrapper(self, sid, data):
+        self.logger.info(f"WS Event 'mission_upload' from {sid}")
+        if self.loop and self.loop.is_running():
+            asyncio.run_coroutine_threadsafe(self._handle_mission_upload(data), self.loop)
+
+    async def _handle_mission_upload(self, data: dict):
+        """Logic to upload mission to the Flight Controller via NATS."""
+        uav_id: str = self.discovery.remote_client_id if self.discovery else "airunit-001" #TODO-remove the hardcode of id
+
+        self.logger.info(f"Attempting to trigger mission upload for UAV: {uav_id}")
+        
+        try:
+            if self._cmd_egress:
+                # Use the CommandEgressController to build the subject and publish to NATS
+                await self._cmd_egress.send_mission(uav_id, data)
+            else:
+                self.logger.error("CommandEgressController not initialized")
+
+        except Exception as e:
+            self.logger.error(f"Failed to relay Mission Upload command: {e}")        
+
+    async def on_mission_upload_response(self, response: dict):
+        """Sends mission upload response back to WS clients."""
+        try:
+            self.logger.info(f"Got response for mission upload: {response}")
+            if self.ws_server:
+                self.ws_server.send_event("mission_upload_res", response)
+        except Exception as e:
+            self.logger.error(f"Failed to send mission upload response: {e}")        
+
 
     async def stop_service(self):
         """Lifecycle Stop"""

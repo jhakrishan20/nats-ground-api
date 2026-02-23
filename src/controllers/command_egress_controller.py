@@ -6,22 +6,21 @@ from core.utils import Logger
 from factory import MessageFactory, SubjectFactory
 from core.comms import NatsPublisher
 
-class FCLinkController:
+class CommandEgressController:
     """
-    Ground-side Flight Controller Link Controller.
+    Ground-side Command Relay controller.
     
     Purpose:
-    - Manage connection/disconnection triggers to remote UAVs.
-    - Handle MAVLink or serial bridge state commands via NATS.
     """
 
-    def __init__(self, nats_client, ground_id: str, on_conn_response=None, on_disconn_response=None):
+    def __init__(self, nats_client, ground_id: str, on_conn_response=None, on_disconn_response=None, on_mission_upload_response=None):
         self.client = nats_client
         self.publisher = NatsPublisher(nats_client)
         self.ground_id = ground_id
-        self.logger = Logger.get("FCLink")
+        self.logger = Logger.get("CommandEgress")
         self._on_fcconnect_response = on_conn_response
         self._on_fcdisconnect_response = on_disconn_response
+        self._on_mission_upload_response = on_mission_upload_response
 
     # ------------------------------
     # Public API
@@ -31,6 +30,7 @@ class FCLinkController:
         self.logger.info("Activating FCLinkController...")
         # Add subscription setups if needed
         await self._subscribe_to_fc_responses()
+        await self._subscribe_to_mission_upload_response()
 
     async def send_connect_request(self, uav_id: str):
         """Send a 'wannaconnect' trigger to a specific UAV."""
@@ -60,6 +60,19 @@ class FCLinkController:
         await self.client.nc.publish(subject, payload.encode())
         self.logger.info(f"⏹️ Sent FC Disconnect request to [{uav_id}] on {subject}")
 
+    async def send_mission(self, uav_id: str, mission):
+        """Send mission to a specific UAV."""
+        subject = self._build_mission_upload_pub_subject(uav_id)
+        # payload = MessageFactory.create(
+        #     msg_type="mission",
+        #     command="update",
+        #     sender=self.ground_id,
+        #     body={"mission": mission}
+        # )
+        payload = json.dumps(mission)
+        await self.client.nc.publish(subject, payload.encode())
+        self.logger.info(f"📍 Sent {len(mission)} mission items to [{uav_id}] on {subject}")    
+
     # ------------------------------
     # Subscription Handelers
     # ------------------------------
@@ -79,6 +92,15 @@ class FCLinkController:
             cb=self._fcdisconnect_response_cb
         )
         self.logger.info(f"Subscribed to fc responses")
+
+    async def _subscribe_to_mission_upload_response(self):
+        """Subscribe to UAV response for mission upload."""
+        subject =  self._build_mission_upload_sub_subject()
+        await self.client.nc.subscribe(
+            subject,
+            cb=self._mission_upload_response_cb
+        )
+        self.logger.info(f"Subscribed to waypoint upload response")    
 
     # ------------------------------
     # Subject Builders
@@ -112,6 +134,21 @@ class FCLinkController:
             remote_client_id=uav_id
         )
     
+    def _build_mission_upload_pub_subject(self, uav_id: str):
+        """
+        Builds: ground.<ground_id>.mission_upload.request
+        For publishing waypoint upload requests to a specific UAV.
+        """
+        return SubjectFactory().create(
+            source="ground",
+            source_id=self.ground_id,
+            topic="mission_upload",
+            subtopic="request",
+            mode="pub",
+            remote_client_id=uav_id
+        )
+    
+    
     def _build_fcconnect_sub_subject(self):
         """
         Builds: uav.*.fcconnect.response
@@ -138,6 +175,23 @@ class FCLinkController:
             mode="sub"
         )
     
+    def _build_mission_upload_sub_subject(self):
+        """
+        Builds: uav.*.mission_upload.response
+        For subscribing to waypoint upload responses from any UAV.
+        """
+        return SubjectFactory().create(
+            source="uav",
+            source_id="*",
+            topic="mission_upload",
+            subtopic="response",
+            mode="sub"
+        )
+    
+    # ------------------------------
+    # Callbacks
+    # ------------------------------
+
     async def _fcconnect_response_cb(self, msg):
         """
         Callback for uav.*.fcconnect.response
@@ -184,3 +238,23 @@ class FCLinkController:
 
         except Exception as e:
             self.logger.error(f"Error handling fcdisconnect callback: {e}")
+
+    async def _mission_upload_response_cb(self, msg):
+        """
+        Callback for uav.*.mission_upload.response
+        """
+        try:
+            raw_payload = msg.data.decode()
+            data = json.loads(raw_payload)
+            body = data.get("body", {})
+            
+            # Here you would forward this to the GCS as needed, e.g.:
+            # ws_msg = {
+            #     "type": "mission_upload_res",
+            #     "payload": body
+            # }
+            await self._on_mission_upload_response(body)
+            self.logger.info(f"✅ Received Mission Upload response: {body}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling Mission upload response callback: {e}")        

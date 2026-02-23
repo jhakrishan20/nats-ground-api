@@ -129,7 +129,7 @@ class WebSocketServer:
             async for message in websocket:
                 try:
                     data = json.loads(message)
-                    print(data)
+                    # print(data)
                     event_type = data.get("type")
                     payload = data.get("payload")
 
